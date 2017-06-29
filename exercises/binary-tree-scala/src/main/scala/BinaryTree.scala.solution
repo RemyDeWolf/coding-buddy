@@ -1,0 +1,69 @@
+sealed trait BinaryTree {
+  def add(value: Int): BinaryTree
+
+  def search(value: Int): Boolean
+
+  def remove(value: Int): BinaryTree
+}
+
+object BinaryTree {
+  def apply(): BinaryTree = EmptyNode
+}
+
+object EmptyNode extends BinaryTree {
+  override def add(value: Int): BinaryTree = {
+    Node(value, EmptyNode, EmptyNode)
+  }
+
+  override def search(value: Int): Boolean = false
+
+  override def remove(value: Int): BinaryTree = this
+}
+
+case class Node(value: Int, left: BinaryTree, right: BinaryTree) extends BinaryTree {
+
+  def add(i: Int): BinaryTree = {
+    if (i < value) {
+      Node(value, left.add(i), right)
+    } else if (i > value) {
+      Node(value, left, right.add(i))
+    } else {
+      this
+    }
+  }
+
+  override def search(i: Int): Boolean = {
+    if (i < value) {
+      left.search(i)
+    } else if (i > value) {
+      right.search(i)
+    } else {
+      true
+    }
+  }
+
+  override def remove(i: Int): BinaryTree = {
+    if (i < value) {
+      Node(value, left.remove(i), right)
+    } else if (i > value) {
+      Node(value, left, right.remove(i))
+    } else {
+      this match {
+        case Node(_, EmptyNode, EmptyNode) => EmptyNode
+        case Node(_, left: Node, EmptyNode) => left
+        case Node(_, EmptyNode, right: Node) => right
+        case Node(_, left: Node, right: Node) => {
+          val nodeToSwap = right.mostLeft()
+          Node(nodeToSwap.value, left, right.remove(nodeToSwap.value))
+        }
+      }
+    }
+  }
+
+  private def mostLeft(): Node = {
+    this match {
+      case Node(_, left: Node, _) => left.mostLeft()
+      case _ => this
+    }
+  }
+}

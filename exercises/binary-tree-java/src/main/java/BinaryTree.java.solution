@@ -1,0 +1,82 @@
+public class BinaryTree {
+    Node root;
+
+    void add(int i) {
+        root = add(root, i);
+    }
+
+    private Node add(Node node, int i) {
+        if (node == null) {
+            node = new Node(i);
+        } else {
+            if (i < node.value) {
+                node.left = add(node.left, i);
+            } else if (i > node.value) {
+                node.right = add(node.right, i);
+            }
+        }
+        return node;
+    }
+
+    boolean search(int i) {
+        return search(root, i) != null;
+    }
+
+    private Node search(Node node, int i) {
+        if (node != null) {
+            if (i < node.value) {
+                return search(node.left, i);
+            } else if (i > node.value) {
+                return search(node.right, i);
+            } else {
+                return node;
+            }
+        } else {
+            return null;
+        }
+    }
+
+    void remove(int i) {
+        root = remove(root, i);
+    }
+
+    private Node remove(Node node, int i) {
+        if (node != null) {
+            if (i < node.value) {
+                node.left = remove(node.left, i);
+            } else if (i > node.value) {
+                node.right = remove(node.right, i);
+            } else {
+                //node value is i
+                if (node.left == null && node.right == null) {
+                    return null;
+                } else if (node.left != null && node.right == null) {
+                    return node.left;
+                } else if (node.left == null && node.right != null) {
+                    return node.right;
+                } else {
+                    Node nodeToSwap = mostLeft(node.right);
+                    node.value = nodeToSwap.value;
+                    nodeToSwap.value = i;
+                    remove(nodeToSwap, i);
+                }
+            }
+        }
+        return node;
+    }
+
+    private Node mostLeft(Node node) {
+        return node.left == null ? node : mostLeft(node.left);
+    }
+
+}
+
+class Node {
+    int value;
+    Node left;
+    Node right;
+
+    public Node(int value) {
+        this.value = value;
+    }
+}

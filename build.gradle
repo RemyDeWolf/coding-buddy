@@ -1,0 +1,280 @@
+import groovy.json.JsonBuilder
+import groovy.json.JsonSlurper
+import groovy.swing.SwingBuilder
+import groovy.time.TimeDuration
+
+import java.util.concurrent.TimeUnit
+
+import static javax.swing.WindowConstants.DISPOSE_ON_CLOSE
+
+apply plugin: 'base'
+
+ext {
+    selectedExercise = null
+    targetDir = null
+    recordFile = 'records.json'
+    defaultSuccessCommand = 'gradle test'
+    defaultLevels = '{"gold": 10, "silver": 30, "bronze": 60}'
+}
+
+String secondsToDurationStr(Long sec) {
+    sec ? durationToStr(secondsToDuration(sec)) : 'None'
+}
+
+String durationToStr(TimeDuration duration) {
+    duration.toString() - '.000'
+}
+
+Collection loadRecords() {
+    def jsonFile = file(recordFile)
+    jsonFile.exists() ? new JsonSlurper().parseText(jsonFile.text)?.Records : []
+}
+
+def writeRecord(def records, boolean isSuccess, long elapsedSec) {
+    records.add(['Exercise': selectedExercise, 'Date': new Date().format('MM-dd-yyyy'), 'Status': isSuccess ? 'success' : 'fail', 'ElapsedSec': elapsedSec])
+    file(recordFile).write(new JsonBuilder([Records: records]).toPrettyString())
+
+}
+
+//best time in seconds
+Long bestTime(def records, String exercise) {
+    def bestTimeSec = records.findAll { it.Exercise == exercise && it.Status == 'success' }.min {
+        it.ElapsedSec
+    }?.ElapsedSec
+    bestTimeSec ?: null
+}
+
+TimeDuration secondsToDuration(long sec) {
+    use(groovy.time.TimeCategory) {
+        new Date(sec * 1000) - new Date(0)
+    }
+}
+
+def Collection<String> listExercises() {
+    new File("exercises").listFiles().toList().findAll{it.isDirectory()}.collect { it.name }
+}
+
+def Properties loadExerciseProperties(String exercise) {
+    Properties properties = new Properties()
+    File propertiesFile = new File("exercises/$exercise/${project.name}.properties")
+    if (propertiesFile.exists()) {
+        propertiesFile.withInputStream {
+            properties.load(it)
+        }
+    }
+    properties
+}
+
+def loadLevels(Properties props) {
+    def levels = [:]
+    int rangeStart = 0
+    new JsonSlurper().parseText(props?.levels ?: defaultLevels).sort { it.value }.each {
+        def ints = rangeStart..it.value
+        levels.put(it.key, ints)
+        rangeStart = it.value + 1
+    }
+    levels
+}
+
+def getLevelReached(props, timeSec) {
+    int timeMin = timeSec / 60
+    loadLevels(props).find { it.value.contains(timeMin) }?.key
+}
+
+task selectExercise {
+    doLast {
+        new SwingBuilder().edt {
+            dialog(modal: true, // Otherwise the build will continue running before you closed the dialog
+                    title: 'Select Exercise', // Dialog title
+                    alwaysOnTop: true, // pretty much what the name says
+                    resizable: false, // Don't allow the user to resize the dialog
+                    locationRelativeTo: null, // Place dialog in center of the screen
+                    pack: true, // We need to pack the dialog (so it will take the size of it's children
+                    show: true // Let's show it
+            ) {
+                vbox { // Put everything below each other
+                    label(text: "Please select exercise:")
+                    comboBox(id: 'exerciseCombo', items: listExercises())
+                    button(defaultButton: true, text: 'OK', actionPerformed: {
+                        selectedExercise = exerciseCombo.selectedObjects[0]
+                        dispose()
+                    })
+                }
+            }
+        }
+        println "selectedExercise=$selectedExercise"
+    }
+}
+
+task deployExercise() {
+    //TODO configure IDE Eclipse?Intellij
+    doLast {
+        int count = 0
+        while (true) {
+            targetDir = file("$buildDir/${selectedExercise}.${++count}")
+            if (!targetDir.exists()) break
+        }
+        println "Deploying exercise to $targetDir"
+        copy {
+            from "exercises/$selectedExercise"
+            into targetDir
+            exclude '**/*.solution'
+        }
+    }
+}
+task runExercise {
+    doLast {
+        println "Running exercise $selectedExercise"
+
+        Properties properties = loadExerciseProperties(selectedExercise)
+        String successCommand = properties.successCommand ?: defaultSuccessCommand
+
+        def frameProperties = [runCommand    : null,
+                               consoleOutput : 'Click on execute to run the exercise.\nThe process must succeed for the exercise to complete.',
+                               isSuccess     : false,
+                               elapsedTimeSec: null
+        ] as ObservableMap
+
+        long startTime = System.currentTimeMillis()
+        int runCount = 0
+        def records = loadRecords()
+        def currentBestTime = bestTime(records, selectedExercise)
+
+        def swing = SwingBuilder.build {
+            //TODO window can't be hidden?
+            lookAndFeel('nimbus')
+            frame(title: "Running exercise $selectedExercise",
+                    alwaysOnTop: true,
+                    locationRelativeTo: null,
+                    pack: true,
+                    show: true,
+                    defaultCloseOperation: DISPOSE_ON_CLOSE,
+                    id: "frame") {
+                borderLayout()
+                panel(constraints: NORTH) {
+                    borderLayout()
+                    panel(constraints: NORTH) {
+                        borderLayout()
+                        label(text: 'Directory', constraints: WEST)
+                        textField(id: "targetDirTF", constraints: EAST, text: targetDir, editable: false)
+                    }
+                    panel(constraints: CENTER) {
+                        borderLayout()
+                        label(text: 'Command', constraints: WEST)
+                        textField(id: "successCommandTF", constraints: CENTER, text: successCommand, editable: false)
+                        button("Execute",
+                                id: "executeBt",
+                                constraints: EAST,
+                                actionPerformed: { evt ->
+                                    String command = successCommandTF.text
+                                    String dir = targetDirTF.text
+                                    try {
+                                        Process proc = command.execute(null, file(dir))
+                                        proc.waitFor()
+                                        frameProperties.consoleOutput = "> $dir/$command\n $proc.text\n(run #${++runCount})"
+                                        frameProperties.isSuccess = proc.exitValue() == 0
+                                        if (frameProperties.isSuccess) {
+                                            executeBt.enabled = false
+                                            executeBt.text = 'Success'
+                                        }
+                                    } catch (Throwable e) {
+                                        frameProperties.consoleOutput = e.getMessage()
+                                    }
+                                })
+                    }
+                }
+                scrollPane(constraints: CENTER) {
+                    editorPane(id: "consoleview", editable: false)
+                }
+                bind(source: frameProperties, sourceProperty: 'consoleOutput',
+                        target: consoleview, targetProperty: 'text')
+
+                panel(constraints: SOUTH) {
+                    borderLayout()
+                    label(id: 'bestTimeLabel', text: "Best time: ${secondsToDurationStr(currentBestTime)}", constraints: WEST)
+                    label(id: 'timerLabel', text: 'Elapsed time: ', constraints: EAST)
+                }
+
+            }
+
+            doOutside {
+                while (true && !frameProperties.isSuccess) {
+                    frameProperties.elapsedTimeSec = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis() - startTime)
+                    timerLabel.text = 'Elapsed time: ' + secondsToDurationStr(frameProperties.elapsedTimeSec)
+                    sleep 100
+                }
+            }
+        }
+
+        //TODO make bigger
+        swing.doLater { frame.size = [600, 460] }
+
+        while (swing.frame.visible && !frameProperties.isSuccess) {
+            sleep 200
+        }
+
+        boolean newBestTime = frameProperties.isSuccess && currentBestTime && (currentBestTime.toMilliseconds() > frameProperties.elapsedTimeSec * 1000)
+        SwingBuilder.build {
+            lookAndFeel('nimbus')
+            dialog(modal: true,
+                    title: "Exercise Completed",
+                    alwaysOnTop: true,
+                    resizable: false,
+                    locationRelativeTo: null,
+                    pack: true,
+                    show: true
+            ) {
+                vbox {
+                    panel {
+                        borderLayout()
+                        label(constraints: WEST, text: "Exercise")
+                        textField(constraints: EAST, text: selectedExercise, editable: false)
+                    }
+                    panel {
+                        borderLayout()
+                        label(constraints: WEST, text: "Status")
+                        textField(constraints: EAST, text: "${frameProperties.isSuccess ? 'Success' : 'Fail'}", editable: false)
+                    }
+                    panel {
+                        borderLayout()
+                        label(constraints: WEST, text: "Elapsed Time")
+                        textField(constraints: EAST, text: "${secondsToDurationStr(frameProperties.elapsedTimeSec)}", editable: false)
+                    }
+                    panel {
+                        borderLayout()
+                        label(constraints: WEST, text: newBestTime ? 'Previous Best' : 'Best Time')
+                        textField(constraints: EAST, text: durationToStr(currentBestTime), editable: false)
+                    }
+                    button(defaultButton: true, text: 'OK', actionPerformed: {
+                        dispose()
+                    })
+                }
+            }
+        }
+        writeRecord(records, frameProperties.isSuccess, frameProperties.elapsedTimeSec)
+    }
+}
+
+task run {
+    group project.name
+    description "Solve an exercise with $project.name"
+    dependsOn selectExercise, deployExercise, runExercise
+}
+deployExercise.mustRunAfter selectExercise
+runExercise.mustRunAfter deployExercise
+
+task bestTimes {
+    group project.name
+    description "Display best times for each exercises"
+    doLast {
+        def records = loadRecords()
+        printf("%-30s %-30s %-30s\n", 'Exercise', 'Best Time', 'Level Reached')
+        printf("%-30s %-30s %-30s\n", '--------', '---------', '-------------')
+        listExercises().forEach { exercise ->
+            def props = loadExerciseProperties(exercise)
+            Long exBestTime = bestTime(records, exercise)
+            String levelReached = exBestTime == null ? 'not solved' : getLevelReached(props, exBestTime) ?: 'passed'
+            printf("%-30s %-30s %-30s\n", exercise, secondsToDurationStr(exBestTime), levelReached)
+        }
+    }
+}

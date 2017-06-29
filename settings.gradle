@@ -1,0 +1,5 @@
+rootProject.name = 'coding-buddy'
+
+if (!JavaVersion.current().isJava8Compatible()) {
+    throw new GradleException('This build must be run with java 8 or later')
+}
