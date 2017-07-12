@@ -213,7 +213,7 @@ task runExercise {
             sleep 200
         }
 
-        boolean newBestTime = frameProperties.isSuccess && currentBestTime && (currentBestTime.toMilliseconds() > frameProperties.elapsedTimeSec * 1000)
+        boolean newBestTime = frameProperties.isSuccess && currentBestTime && (currentBestTime > frameProperties.elapsedTimeSec * 1000)
         SwingBuilder.build {
             lookAndFeel('nimbus')
             dialog(modal: true,
@@ -243,7 +243,7 @@ task runExercise {
                     panel {
                         borderLayout()
                         label(constraints: WEST, text: newBestTime ? 'Previous Best' : 'Best Time')
-                        textField(constraints: EAST, text: durationToStr(currentBestTime), editable: false)
+                        textField(constraints: EAST, text: secondsToDurationStr(currentBestTime), editable: false)
                     }
                     button(defaultButton: true, text: 'OK', actionPerformed: {
                         dispose()
