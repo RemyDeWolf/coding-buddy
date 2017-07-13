@@ -1,0 +1,46 @@
+class Piglatin {
+
+    String translate(String sentence) {
+        StringBuilder output = new StringBuilder()
+        StringBuilder word = new StringBuilder()
+        sentence.each { String c ->
+            if (isVowel(c) || isConsonant(c)) {
+                word.append(c)
+            } else {
+                if (word) {
+                    output.append(translateWord(word.toString()))
+                    word = new StringBuilder()
+                }
+                output.append(c)
+            }
+        }
+        if (word) {
+            output.append(translateWord(word.toString()))
+        }
+        output.toString()
+    }
+
+    private String translateWord(String word) {
+        if (isVowel(String.valueOf(word.charAt(0)))) {
+            word + 'yay'
+        } else {
+            String consonants = word.takeWhile { isConsonant(String.valueOf(it)) }
+            if (consonants) {
+                String result = word.substring(consonants.length()) + consonants.toLowerCase() + 'yay'
+                startsWithUpperCase(word) ? result.capitalize() : result
+            }
+        }
+    }
+
+    private boolean startsWithUpperCase(String s) {
+        Character.isUpperCase(s.charAt(0))
+    }
+
+    private boolean isVowel(CharSequence c) {
+        "AEIOUaeiou".contains(c)
+    }
+
+    private boolean isConsonant(CharSequence c) {
+        "bcdfghjklmnpqrstvwxyzBCDFGHJKLMNPQRSTVWXYZ".contains(c)
+    }
+}
