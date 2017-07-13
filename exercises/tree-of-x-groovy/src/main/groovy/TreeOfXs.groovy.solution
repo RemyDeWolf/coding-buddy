@@ -1,0 +1,21 @@
+class TreeOfXs {
+    String makeTree(int size) {
+        List<String> lines = []
+        int indent = 0
+        (size..1).each {
+            StringBuilder sb = new StringBuilder()
+            if (indent > 0) {
+                (1..indent).each { sb.append(' ') }
+            }
+            (1..it).each {
+                if (it != 1) {
+                    sb.append(' ')
+                }
+                sb.append('X')
+            }
+            lines.add(sb.toString())
+            indent++
+        }
+        lines.reverse().join('\n')
+    }
+}
